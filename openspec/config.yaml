@@ -8,6 +8,35 @@ schema: spec-driven
 #     Tech stack: TypeScript, React, Node.js
 #     We use conventional commits
 #     Domain: e-commerce platform
+context: |
+  Product: a single-player pixel-art roguelite built on chess, for Steam (desktop).
+  Pieces have HP and ATK; a battle is won by bringing the enemy king to 0 HP.
+  The long-term game: army draft, node map, relics, permanent unlocks.
+  Team: one programmer (Bjorn) and one pixel artist who delivers assets without writing code.
+
+  Current state: a console prototype of the battle rules. There is no Unity project yet.
+  Unity (2D, Unity 6 LTS) is the intended presentation layer and comes later.
+
+  Layout:
+  - src/RogueChess.Engine: the rules. netstandard2.1, C# 9 at most, no UnityEngine
+    reference, no DI framework, no NuGet dependencies. It must drop into a Unity
+    assembly unchanged and stay runnable headless for tests and simulation.
+  - src/RogueChess.ConsoleApp: hot-seat play and bot simulation (net8.0).
+  - tests/RogueChess.Engine.Tests: NUnit (chosen because Unity Test Framework uses NUnit).
+  - docs/rule-validation.md: simulation results behind the current rule values.
+
+  Engine conventions:
+  - Piece movement is data: direction vectors with range and a jump flag. No piece-specific code.
+  - Tuning values (stats, bonuses, fatigue) are data, so balancing needs no code change.
+  - Battle rules are deterministic; randomness belongs to callers and must be seeded.
+  - Applying an action returns an ordered event list; presentation is driven by those events.
+  - Coordinates are zero-based (file, rank) integers; no string annotations inside the engine.
+
+  Working method:
+  - Prove rules in the console and with `simulate` before building presentation for them.
+  - Keep changes small: one playable step per change.
+  - The older ChessAPI repo is a reference for piece patterns only; do not port its code.
+  - Artifacts and code are written in English; the owner discusses in Dutch.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
