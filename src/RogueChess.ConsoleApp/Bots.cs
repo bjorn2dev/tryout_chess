@@ -1,4 +1,5 @@
 using RogueChess.Engine;
+using RogueChess.Engine.Enemy;
 
 namespace RogueChess.ConsoleApp;
 
@@ -7,12 +8,20 @@ internal static class Bots
 {
     public delegate LegalAction Bot(Battle battle, IReadOnlyList<LegalAction> actions, Random rng);
 
-    public static Bot Parse(string name) => name switch
+    public static Bot Parse(string name)
     {
-        "greedy" => Greedy,
-        "random" => RandomBot,
-        _ => throw new ArgumentException($"Unknown bot '{name}'. Use greedy or random.")
-    };
+        if (name == "greedy") return Greedy;
+        if (name == "random") return RandomBot;
+
+        var archetype = Archetypes.ByName(name);
+        if (archetype == null)
+            throw new ArgumentException($"Unknown player '{name}'. Use greedy, random, brute, hunter or warden.");
+        return (battle, actions, rng) =>
+        {
+            var choice = archetype.Choose(battle);
+            return new LegalAction(choice.Action, choice.Preview);
+        };
+    }
 
     public static LegalAction RandomBot(Battle battle, IReadOnlyList<LegalAction> actions, Random rng) =>
         actions[rng.Next(actions.Count)];

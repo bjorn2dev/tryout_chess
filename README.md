@@ -5,7 +5,7 @@ Prototype of the battle rules for a roguelike chess game: chess pieces with hit 
 - `src/RogueChess.Engine` — the rules (netstandard2.1, no dependencies)
 - `src/RogueChess.ConsoleApp` — hot-seat play and bot simulation
 - `tests/RogueChess.Engine.Tests` — NUnit tests
-- `docs/rule-validation.md` — simulation results for the current rule values
+- `docs/rule-validation.md`, `docs/enemy-validation.md` — simulation results for the rules and the enemies
 
 ## Build and test
 
@@ -27,6 +27,33 @@ dotnet run --project src/RogueChess.ConsoleApp -- play
 
 Enter an action as `<from> <to>`, for example `b2 b3`. Naming a square with an enemy piece attacks it. `list` shows every legal action with its attack preview, `quit` stops. White pieces are upper case, Black lower case, and the digit after a piece is its HP.
 
+## Play against an enemy
+
+You are White and move first; the enemy answers at once and prints the rule that decided its action:
+
+```bash
+dotnet run --project src/RogueChess.ConsoleApp -- play --enemy brute
+```
+
+The enemies are `brute`, `hunter` and `warden`. Type `peek <from> <to>` to see the enemy's reply to an action without playing it. Enemies never use chance: the same position always gives the same reply.
+
+An enemy tries its rules in order and the first one that applies decides:
+
+| Enemy  | Rule order                                                        |
+|--------|-------------------------------------------------------------------|
+| Brute  | finish king, kill, strike, advance                                |
+| Hunter | finish king, attack king, advance, kill, strike                   |
+| Warden | finish king, protect king, kill, strike, advance without its king |
+
+- **finish king**: a lethal attack on your king.
+- **attack king**: the most damaging attack on your king.
+- **kill**: a lethal attack, on the most valuable piece (HP plus ATK).
+- **strike**: the most damaging attack.
+- **protect king**: move its attacked king to a square nothing attacks.
+- **advance**: the move that brings a piece closest to your king by the largest step.
+
+If no rule applies the enemy takes its first legal action. Simulation results per enemy are in `docs/enemy-validation.md`.
+
 ## Simulate
 
 Play bot battles and print battle length, fatigue endings and win rates:
@@ -35,7 +62,7 @@ Play bot battles and print battle length, fatigue endings and win rates:
 dotnet run --project src/RogueChess.ConsoleApp -- simulate --games 1000 --seed 1
 ```
 
-Options: `--white` and `--black` (`greedy` or `random`), `--bonus`, `--cap`, `--fatigue-start`, `--king-hp`, and `--record <file>` to save the first battle as a script. Replay such a script with:
+Options: `--white` and `--black` (`greedy`, `random`, `brute`, `hunter` or `warden`), `--bonus`, `--cap`, `--fatigue-start`, `--king-hp`, and `--record <file>` to save the first battle as a script. When Black is an enemy, only White's actions are saved, for use with `play --enemy`. Replay a script with:
 
 ```bash
 dotnet run --project src/RogueChess.ConsoleApp -- play --script <file>

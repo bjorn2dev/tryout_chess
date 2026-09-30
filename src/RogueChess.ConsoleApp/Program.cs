@@ -1,16 +1,21 @@
 using System.Globalization;
 using RogueChess.ConsoleApp;
 using RogueChess.Engine;
+using RogueChess.Engine.Enemy;
 
 const string Usage = """
     Usage:
-      play [--script <file>]
-          Hot-seat battle on the starter scenario. Enter actions as "<from> <to>", e.g. "b2 b3".
-          Other input: "list" shows all legal actions, "quit" stops.
-      simulate [--games N] [--seed S] [--white greedy|random] [--black greedy|random]
+      play [--enemy brute|hunter|warden] [--script <file>]
+          Battle on the starter scenario. Enter actions as "<from> <to>", e.g. "b2 b3".
+          Without --enemy both sides are played at the keyboard; with it you are White.
+          Other input: "list" shows all legal actions, "quit" stops,
+          "peek <from> <to>" shows the enemy's reply to an action without playing it.
+      simulate [--games N] [--seed S] [--white <player>] [--black <player>]
                [--bonus N] [--cap N] [--fatigue-start N] [--king-hp N] [--record <file>]
           Plays N bot battles and prints pacing and balance numbers.
-          --record writes the actions of the first battle as a script for "play --script".
+          Players: greedy, random, brute, hunter, warden.
+          --record writes the actions of the first battle as a script for "play --script";
+          when Black is an enemy archetype only White's actions are written, for "play --enemy".
     """;
 
 try
@@ -55,10 +60,23 @@ static int Int(Dictionary<string, string> options, string name, int fallback) =>
 static int Play(Dictionary<string, string> options)
 {
     TextReader input = options.TryGetValue("script", out var script) ? new StreamReader(script) : Console.In;
+    Behaviour enemy = null;
+    if (options.TryGetValue("enemy", out var enemyName))
+        enemy = Archetypes.ByName(enemyName)
+            ?? throw new ArgumentException($"Unknown enemy '{enemyName}'. Use brute, hunter or warden.");
     var battle = new Battle(Scenarios.Starter());
 
     while (battle.State.Result == BattleResult.Ongoing)
     {
+        if (enemy != null && battle.State.SideToAct == Side.Black)
+        {
+            var choice = enemy.Choose(battle);
+            Console.WriteLine($"{enemy.Name} plays: {Describe(choice)}");
+            foreach (var e in battle.Apply(choice.Action).Events)
+                Console.WriteLine("  " + e);
+            continue;
+        }
+
         PrintBoard(battle.State);
         Console.Write($"Round {battle.State.Round}, {battle.State.SideToAct} to act > ");
         var line = input.ReadLine();
@@ -74,17 +92,33 @@ static int Play(Dictionary<string, string> options)
         if (words.Length == 1 && words[0] == "list")
         {
             foreach (var legal in battle.GetLegalActions())
-                Console.WriteLine("  " + Describe(legal));
+                Console.WriteLine("  " + DescribeLegal(legal));
+            continue;
+        }
+        if (words.Length == 3 && words[0] == "peek"
+            && Coord.TryParse(words[1], out var peekFrom) && Coord.TryParse(words[2], out var peekTo))
+        {
+            var peeked = ToAction(battle, peekFrom, peekTo);
+            if (enemy == null)
+                Console.WriteLine("peek needs an enemy; start with --enemy.");
+            else if (!battle.GetLegalActions().Any(a => a.Action.Equals(peeked)))
+                Console.WriteLine($"{peeked} is not a legal action.");
+            else
+            {
+                var reply = enemy.PredictReply(battle, peeked);
+                Console.WriteLine(reply == null
+                    ? $"{enemy.Name} would have no reply."
+                    : $"{enemy.Name} would play: {Describe(reply)}");
+            }
             continue;
         }
         if (words.Length != 2 || !Coord.TryParse(words[0], out var from) || !Coord.TryParse(words[1], out var to))
         {
-            Console.WriteLine("Enter an action as \"<from> <to>\", or \"list\" or \"quit\".");
+            Console.WriteLine("Enter an action as \"<from> <to>\", or \"list\", \"peek <from> <to>\" or \"quit\".");
             continue;
         }
 
-        var kind = battle.State.PieceAt(to) == null ? ActionKind.Move : ActionKind.Attack;
-        var result = battle.Apply(new BattleAction(kind, from, to));
+        var result = battle.Apply(ToAction(battle, from, to));
         if (!result.Accepted)
         {
             Console.WriteLine(result.RejectionReason);
@@ -99,6 +133,10 @@ static int Play(Dictionary<string, string> options)
     return 0;
 }
 
+// Naming an occupied square means attacking it.
+static BattleAction ToAction(Battle battle, Coord from, Coord to) =>
+    new BattleAction(battle.State.PieceAt(to) == null ? ActionKind.Move : ActionKind.Attack, from, to);
+
 static string Winner(BattleResult result) => result switch
 {
     BattleResult.WhiteWins => "White",
@@ -106,7 +144,9 @@ static string Winner(BattleResult result) => result switch
     _ => "nobody, it is a draw"
 };
 
-static string Describe(LegalAction legal)
+static string Describe(EnemyChoice choice) => $"{choice.Action} [{choice.RuleName}]";
+
+static string DescribeLegal(LegalAction legal)
 {
     if (legal.Preview == null) return $"{legal.Action.From} {legal.Action.To}  move";
     var p = legal.Preview;
@@ -146,6 +186,7 @@ static int Simulate(Dictionary<string, string> options)
     int seed = Int(options, "seed", 1);
     string whiteName = options.GetValueOrDefault("white", "greedy");
     string blackName = options.GetValueOrDefault("black", "greedy");
+    bool blackIsEnemy = Archetypes.ByName(blackName) != null;
     var white = Bots.Parse(whiteName);
     var black = Bots.Parse(blackName);
 
@@ -173,7 +214,8 @@ static int Simulate(Dictionary<string, string> options)
         {
             var bot = battle.State.SideToAct == Side.White ? white : black;
             var choice = bot(battle, battle.GetLegalActions(), rng);
-            record?.Add($"{choice.Action.From} {choice.Action.To}");
+            if (!blackIsEnemy || battle.State.SideToAct == Side.White)
+                record?.Add($"{choice.Action.From} {choice.Action.To}");
             battle.Apply(choice.Action);
         }
 
